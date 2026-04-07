@@ -1,7 +1,10 @@
-import pandas as pd
-import numpy as np
+from functools import lru_cache
 
-dataset = pd.read_parquet("dataset_solar_santa_fe_LOCAL.parquet")
+import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
+
+DATASET_PATH = "dataset_solar_santa_fe_LOCAL.parquet"
 
 def calcular_generacion(inputs):
 
@@ -23,8 +26,8 @@ def calcular_generacion(inputs):
     if not 0 <= perdidas <= 100:
         raise ValueError("Las perdidas deben estar entre 0 y 100")
 
-    lat_cercana, lon_cercana = obtener_coordenadas(lat, lon, dataset)
-    df_punto = obtener_datos_punto(lat_cercana, lon_cercana, dataset)
+    lat_cercana, lon_cercana = obtener_coordenadas(lat, lon)
+    df_punto = obtener_datos_punto(lat_cercana, lon_cercana)
 
     df_punto = calcular_aoi(df_punto, betha, azimuth)
     df_punto = calcular_factores_perez(df_punto)
@@ -60,9 +63,24 @@ def calcular_generacion(inputs):
 
     return resultados
 
-def obtener_coordenadas(latitud_real, longitud_real, lista):
+@lru_cache(maxsize=1)
+def obtener_coordenadas_unicas():
+    parquet = pq.ParquetFile(DATASET_PATH)
+    coordenadas = []
 
-    coordenadas = lista[["lat", "lon"]].drop_duplicates()
+    for batch in parquet.iter_batches(columns=["lat", "lon"], batch_size=250_000):
+        tabla = batch.to_pandas()
+        coordenadas.append(tabla.drop_duplicates())
+
+    if not coordenadas:
+        raise ValueError("No se encontraron coordenadas en el dataset.")
+
+    return pd.concat(coordenadas, ignore_index=True).drop_duplicates().reset_index(drop=True)
+
+
+def obtener_coordenadas(latitud_real, longitud_real):
+
+    coordenadas = obtener_coordenadas_unicas()
 
     distancias = np.sqrt(
         (coordenadas["lat"] - latitud_real)**2 +
@@ -76,7 +94,8 @@ def obtener_coordenadas(latitud_real, longitud_real, lista):
 
     return lat_cercana, lon_cercana
 
-def obtener_datos_punto(latitud, longitud, lista):
+@lru_cache(maxsize=32)
+def obtener_datos_punto(latitud, longitud):
 
     columnas_base = [
         "time",
@@ -92,10 +111,17 @@ def obtener_datos_punto(latitud, longitud, lista):
         "dia",
     ]
 
-    df_punto = lista.loc[
-        (lista["lat"] == latitud) & (lista["lon"] == longitud),
-        columnas_base
-    ].copy()
+    df_punto = pd.read_parquet(
+        DATASET_PATH,
+        columns=columnas_base,
+        filters=[
+            ("lat", "==", float(latitud)),
+            ("lon", "==", float(longitud)),
+        ],
+    ).copy()
+
+    if df_punto.empty:
+        raise ValueError("No se encontraron datos para la coordenada seleccionada.")
 
     df_punto = df_punto.sort_values("time").reset_index(drop=True)
     df_punto["time"] = pd.to_datetime(df_punto["time"])
