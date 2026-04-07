@@ -7,6 +7,7 @@ Aplicacion en Streamlit para simular la generacion de energia fotovoltaica a par
 - `web.py`: interfaz web en Streamlit.
 - `motor.py`: motor de calculo de irradiancia, perdidas y generacion.
 - `dataset_solar_santa_fe_LOCAL.parquet`: dataset solar horario local.
+- `ciudades_con_coordenadas.csv`: coordenadas de ciudades para seleccionar la ubicacion.
 
 ## Ejecutar en local
 
@@ -15,6 +16,7 @@ pip install -r requirements.txt
 streamlit run web.py
 ```
 
-## Despliegue
+## Despliegue en Streamlit Cloud
 
 El archivo de entrada para Streamlit es `web.py`.
+El dataset `.parquet` se versiona con Git LFS porque supera el limite de archivos normales de GitHub.
